@@ -42,16 +42,28 @@ class MonitoringAlert:
     judge_fails: int = 0
 
     def check_metrics(self) -> list[Alert]:
-        """TODO: compute rates, append Alert objects when thresholds exceeded."""
-        raise NotImplementedError("Implement MonitoringAlert.check_metrics")
+        """Compute rates; return (and keep) one Alert per threshold exceeded."""
+        snap = self.snapshot()
+        new = []
+        if self.total_requests and snap["block_rate"] > self.block_rate_threshold:
+            new.append(Alert("block_rate", snap["block_rate"], self.block_rate_threshold,
+                             f"{self.blocked_requests}/{self.total_requests} requests blocked: possible attack wave"))
+        if self.rate_limit_hits >= self.rate_limit_hit_threshold:
+            new.append(Alert("rate_limit_hits", self.rate_limit_hits, self.rate_limit_hit_threshold,
+                             f"{self.rate_limit_hits} rate-limit hits: possible flooding / cost attack"))
+        if self.judge_checks and snap["judge_fail_rate"] > self.judge_fail_rate_threshold:
+            new.append(Alert("judge_fail_rate", snap["judge_fail_rate"], self.judge_fail_rate_threshold,
+                             f"{self.judge_fails}/{self.judge_checks} responses failed the judge"))
+        self.alerts = new   # recomputed from counters, so calling twice does not duplicate alerts
+        return new
 
     def export_json(self, filepath: str | None = None):
-        """TODO: write metrics + alerts to JSON under repo-root ``outputs/`` by default.
-        Use ``filepath or default_metrics_path()`` so running from ``src/`` does not
-        create ``src/outputs/``.
-        """
-        _ = filepath or default_metrics_path()
-        raise NotImplementedError("Implement MonitoringAlert.export_json")
+        """Write metrics + alerts to JSON under repo-root ``outputs/`` by default."""
+        self.check_metrics()
+        path = Path(filepath or default_metrics_path())
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(self.snapshot(), ensure_ascii=False, indent=2), encoding="utf-8")
+        return str(path)
 
     def snapshot(self) -> dict:
         block_rate = (
